@@ -1,0 +1,125 @@
+#!/bin/bash
+# author      : yangyi
+# date        : 20180426
+# Script Name : yzcli
+# Description : sql query tool for redis
+###########################################################################################
+print_copyright()
+{
+ echo "==========================================================================="
+ echo " yzcli   : tool for Redis"
+ echo " Version : 1.0.1"
+ echo "==========================================================================="
+ echo " Try 'yzcli help' for more information."
+ echo " "
+}
+
+print_usage()
+{
+ echo " Usage: yzcli port cmd [arg1] [arg2] [arg3] [...]"
+ echo "-----------------------------------------------------------------------------"
+ echo "  cmd       argments                  description"
+ echo "  ========  ======================    ======================================="
+ echo "  PORT                                : enter redis with port                "
+ echo "  ip        [PORT] ip [DB_NUM]        : show ip lists which connect to redis "
+ echo "  mem       [PORT] mem                : show memory info                     "
+ echo "  slave     [PORT] slave              : show slave info                      "
+ echo "  keys      [PORT] keys               : show Keyspace info                   "
+ echo "  shutdown  [PORT] shutdown           : shoutdown redis instance             "
+ echo "============================================================================="
+ echo
+}
+
+
+if ! which redis-cli &>/dev/null; then
+  echo "can not find  redis-cli command ,pls check ." >&2
+  exit 2
+else
+   RDSCLI=`which redis-cli`
+fi
+
+get_all()
+{
+  ## get all redis instance stats
+  ports=`ps -ef | grep redis-server | grep -v grep |awk -F0.0.0.0: '{print $2}' |awk '{print $1}'| sort`
+  echo "[port]    [role]     [cluster]"
+  for p in ${ports} ;
+  do
+
+     cluster_num=`${RDSCLI} -h 127.0.0.1 -p ${p} info Cluster |grep -Ec 'cluster_enabled:1'`
+
+     if [ ${cluster_num} -eq 1 ]; then
+         cluster_status='Yes'
+     else
+         cluster_status='No'
+     fi
+
+     role_num=`${RDSCLI} -h 127.0.0.1 -p ${p} info Replication |grep -Ec 'role:master'`
+
+     if [ ${role_num} -eq 1 ]; then
+         role='master'
+         echo  -e "\033[32m $p     [$role]     [${cluster_status}]\033[0m "
+     else
+         role='slave'
+         echo  -e "\033[33m $p     [$role ]     [${cluster_status}]\033[0m "
+     fi
+
+
+  done
+
+}
+
+if [ $# -lt 1 ] || [[ "$1" =~ ^[A-Za-z]+$ ]]; then
+    print_usage
+    get_all
+    exit 1
+elif [[ "$1" =~ ^[0-9]+$ ]]; then
+    port=$1
+    num=`ps -ef | grep redis-server | grep $port | grep -v grep | wc -l`
+    if [ $num -lt 1 ]; then
+        echo  "instance not exists ,please check .."
+        exit 1
+    fi
+fi
+
+num=`ps -ef | grep redis-server | grep $1 | grep -v grep | wc -l`
+if [ $num -eq 0 ]; then
+   print "instance not exists ,please check .."
+   exit 1
+fi
+
+
+REDIS_CLI="$RDSCLI -h 127.0.0.1 -p ${port} "
+CMD=`echo $2 | tr "[A-Z]" "[a-z]"`
+case ${CMD} in
+keys)
+  ${REDIS_CLI} info Keyspace
+;;
+mem)
+  ${REDIS_CLI} info Memory
+;;
+ip)
+  if [[ $# -eq 3  ]]; then
+    db="db=${3}"
+    ${REDIS_CLI} client list  |awk '{print $2, $8}' | grep $db
+  else
+    ${REDIS_CLI} client list  |awk '{print $2, $8}'
+  fi
+;;
+slave)
+  ${REDIS_CLI} info Replication
+;;
+shutdown)
+  ${REDIS_CLI} shutdown
+;;
+"")
+## enter redis-db
+  ${REDIS_CLI}
+;;
+*)
+  print_copyright
+  print_usage
+  get_all
+  exit 0
+;;
+esac
